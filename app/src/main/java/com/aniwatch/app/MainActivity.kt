@@ -198,7 +198,7 @@ private fun AniWatchApp() {
             }
         }
     }
-    LaunchedEffect(apiBase) { if (apiBase.startsWith("https://")) loadHome() }
+    LaunchedEffect(Unit) { loadHome() }
 }
 
 @Composable
