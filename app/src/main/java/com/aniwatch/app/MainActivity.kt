@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
 private class AniApi(context: Context) {
     private val prefs = context.getSharedPreferences("aniwatch", Context.MODE_PRIVATE)
     var baseUrl: String
-        get() = prefs.getString("api", "") ?: ""
+        get() = prefs.getString("api", "https://api-aniwatch.onrender.com") ?: "https://api-aniwatch.onrender.com"
         set(value) { prefs.edit().putString("api", value.trim().trimEnd('/')).apply() }
 
     private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
