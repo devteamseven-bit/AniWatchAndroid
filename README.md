@@ -1,30 +1,51 @@
-# AniWatch Android — Native UI Prototype
+# AniWatch Native Android / Google TV App
 
-A Kotlin + Jetpack Compose streaming-app shell designed for Android phones and Google TV. The interface uses a dark, Netflix-inspired layout with featured content, horizontal title rails, search, My List, detail pages, D-pad focusable controls, and a native AndroidX Media3 player.
+A native Kotlin + Jetpack Compose anime app for Android phones and Google TV. It is not a WebView wrapper and it does not use a hardcoded sample catalog.
 
-## Important integration boundary
+## What is implemented
 
-The current project does **not** extract video URLs from AniWatch's third-party embeds or bypass DRM, access controls, or provider restrictions. The AniWatch site is linked as a catalog reference. The home screen is prefilled with a small static snapshot of titles visible on the AniWatch homepage when this project was prepared. It does not yet refresh automatically from the site or provide live episode metadata. A stable, documented and authorized metadata endpoint is needed for reliable live catalog integration.
+- Live home sections from an AniWatch-compatible API: Spotlight, Trending, Top Airing, Latest Episodes, Popular, Favorites and Completed.
+- Real poster artwork loaded from API image URLs.
+- Search against the API, with a short debounce.
+- Anime detail pages and episode lists.
+- Episode server lookup and source lookup through the API.
+- Native Media3 / ExoPlayer HLS playback, including source Referer/User-Agent headers and the first available subtitle track.
+- My List, phone touch navigation and focusable controls for TV remotes.
+- API base URL setting so the backend can be changed without changing the Android code.
+- GitHub Actions workflow to build a debug APK.
 
-The native Media3 player accepts direct HTTP(S) video URLs for formats supported by Media3, including HLS (`.m3u8`), DASH (`.mpd`) and MP4. A webpage URL, iframe URL, or protected player page is not necessarily a direct media stream. Use only streams you are authorized to access.
+## Important: the API is a separate service
 
-## Requirements
+This Android project does not contain an API server. The app expects an HTTPS API server implementing the documented HiAnime/AniWatch-compatible routes under `/api/v2/hianime`.
 
-- Android Studio Ladybug or newer
-- JDK 17
-- Android SDK Platform 35
-- Gradle 8.9 (the GitHub Actions workflow installs it)
+The initial adapter targets the API contract documented by:
 
-## Build in Android Studio
+- https://github.com/VoidX3D/hianime-api
 
-Open the `AniWatchAndroid` folder and allow Gradle to sync. If Android Studio asks for a Gradle distribution, select Gradle 8.9. Then select **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
+That project describes itself as an unofficial scraper for **hianimez.to**, not an official API for `aniwatch.co.at`. Its README recommends deploying your own instance; it warns that its former hosted demo is no longer available. Therefore, this app cannot promise that the API will return the exact same catalog as `aniwatch.co.at`, or that every episode will have a working stream. API/provider changes can break results.
 
-The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+### Deploy your own API instance
 
-## Build on GitHub
+1. Open https://github.com/VoidX3D/hianime-api and fork the repository.
+2. Deploy your fork using its current hosting instructions (Docker, Render or Vercel are described in that repository).
+3. For Render, follow the upstream README and set `ANIWATCH_API_DEPLOYMENT_ENV=render`. For Vercel, set it to `vercel`.
+4. Wait until the deployment reports healthy and copy its HTTPS base URL, for example `https://your-service.example` (do not append `/api/v2/hianime`).
+5. Install the Android app, open **Settings**, paste that HTTPS base URL and tap **Save and connect**.
 
-Push the project contents to a GitHub repository. The included workflow `.github/workflows/build-apk.yml` builds the debug APK on pushes to `main`/`master` or when manually started from the Actions tab. Download the `AniWatch-Android-APK` artifact.
+Do not use an untrusted public API host for your personal viewing data. The Android app sends catalog and playback lookup requests to the API address you configure.
 
-## TV and phone
+## Playback notes
 
-The same APK declares both `LAUNCHER` and `LEANBACK_LAUNCHER` entry points. Compose controls are focusable for remote navigation and touch-enabled for phones. Test on actual target devices because TV focus behavior and playback depend on the device and stream format.
+The API contract returns HLS source URLs, request headers and subtitle tracks. The app hands those values to Media3. It does not decrypt DRM, defeat provider authentication, or turn unsupported embedded players into direct streams. If an upstream server returns an embed instead of a playable HLS source, that episode will show a playback error rather than asking you to paste a URL.
+
+Only use sources and content you are authorized to access. Availability, regional restrictions and provider uptime are controlled by the upstream services, not this app.
+
+## Build
+
+- Android Studio with JDK 17
+- Android Gradle Plugin 8.7.3 / Gradle 8.9
+- Android SDK 35
+
+Open the `AniWatchAndroid` folder in Android Studio. If Android Studio asks for a Gradle installation, use Gradle 8.9. The included GitHub Actions workflow installs Gradle 8.9 and builds `app/build/outputs/apk/debug/app-debug.apk`.
+
+The project source has not been compiled in this environment because an Android SDK / Gradle installation is not available here. Run the GitHub Actions build or build locally in Android Studio before installing it.

@@ -1,13 +1,12 @@
 package com.aniwatch.app
 
+import android.content.Context
 import android.os.Bundle
-import android.content.Intent
-import android.net.Uri
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -15,8 +14,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -34,327 +39,319 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
-import android.view.ViewGroup
+import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
-private val Ink = Color(0xFF090B12)
-private val Panel = Color(0xFF151925)
-private val Muted = Color(0xFF9AA3B5)
-private val Accent = Color(0xFF8B5CF6)
+private val Bg = Color(0xFF080A10)
+private val SurfaceDark = Color(0xFF171B27)
+private val Muted = Color(0xFFA5ADBC)
+private val Red = Color(0xFFE50914)
+private val Http = OkHttpClient.Builder().callTimeout(25, TimeUnit.SECONDS).build()
 
-private data class Anime(
-    val id: Int,
-    val title: String,
-    val subtitle: String,
-    val genre: String,
-    val description: String,
-    val colors: List<Color>
-)
-
-private val catalog = listOf(
-    Anime(1, "There Was a Cute Girl in the Hero’s Party", "A confession in a fantasy world", "TV • Fantasy • Romance", "Youki is reborn in a fantasy world as an overpowered demon guardian. When the Hero’s party attacks the Demon Lord’s castle, an unexpected encounter changes his plans.", listOf(Color(0xFF164E63), Color(0xFF7C3AED))),
-    Anime(2, "Hell’s Paradise Season 2", "The search for the elixir continues", "TV • Action • Dark Fantasy", "The second season of Jigokuraku continues the dangerous journey across a mysterious island.", listOf(Color(0xFF365314), Color(0xFF9A3412))),
-    Anime(3, "Dead Account", "A streamer caught in a supernatural world", "TV • Action • Supernatural", "Online streamer Aoringo hides a very different life behind his provocative videos, until his world takes a dangerous turn.", listOf(Color(0xFF1E293B), Color(0xFFB91C1C))),
-    Anime(4, "Frieren: Beyond Journey’s End Season 2", "The journey after the hero’s quest", "TV • Adventure • Fantasy", "Frieren and her companions continue their journey through a world shaped by memories and the passage of time.", listOf(Color(0xFF155E75), Color(0xFF4F46E5))),
-    Anime(5, "Fire Force Season 3 Part 2", "The final battle draws closer", "ONA • Action • Sci-Fi", "The Special Fire Force faces the mysteries behind spontaneous human combustion and the fate of the world.", listOf(Color(0xFF7F1D1D), Color(0xFFEA580C))),
-    Anime(6, "Jujutsu Kaisen: The Culling Game Part 1", "A deadly game begins", "TV • Action • Supernatural", "The next chapter brings sorcerers into a deadly conflict with rules that threaten everyone involved.", listOf(Color(0xFF312E81), Color(0xFFBE185D))),
-    Anime(7, "Sentenced to Be a Hero", "A punishment with no escape", "TV • Action • Fantasy", "Convicted heroes are forced to fight in an endless war against the Demon Lords, unable to escape even through death.", listOf(Color(0xFF7C2D12), Color(0xFFB91C1C))),
-    Anime(8, "Jack-of-All-Trades, Party of None", "A dismissed adventurer starts over", "TV • Adventure • Fantasy", "After being dismissed by his former party, Orn returns to the role he once mastered and begins a new adventure.", listOf(Color(0xFF14532D), Color(0xFF0E7490))),
-    Anime(9, "One Punch Man 3", "The hero who ends every fight in one punch", "TV • Action • Comedy", "Saitama’s overwhelming strength continues to reshape the world of heroes and monsters.", listOf(Color(0xFF1D4ED8), Color(0xFF991B1B))),
-    Anime(10, "One Piece", "The search for the ultimate treasure", "TV • Adventure • Comedy", "Monkey D. Luffy and his crew sail across the Grand Line in pursuit of the legendary One Piece.", listOf(Color(0xFF075985), Color(0xFF0F766E)))
-)
+private data class Anime(val id: String, val name: String, val poster: String, val description: String = "", val type: String = "", val rating: String = "", val sub: Int = 0, val dub: Int = 0)
+private data class Episode(val id: String, val number: Int, val title: String, val filler: Boolean)
+private data class Server(val name: String, val id: Int)
+private data class StreamInfo(val url: String, val referer: String, val userAgent: String, val subtitles: List<Pair<String, String>>)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(9, 11, 18)
-        window.navigationBarColor = android.graphics.Color.rgb(9, 11, 18)
+        window.statusBarColor = android.graphics.Color.rgb(8, 10, 16)
+        window.navigationBarColor = android.graphics.Color.rgb(8, 10, 16)
         setContent { AniWatchApp() }
     }
 }
 
+private class AniApi(context: Context) {
+    private val prefs = context.getSharedPreferences("aniwatch", Context.MODE_PRIVATE)
+    var baseUrl: String
+        get() = prefs.getString("api", "") ?: ""
+        set(value) { prefs.edit().putString("api", value.trim().trimEnd('/')).apply() }
+
+    private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
+        val base = baseUrl.trim().trimEnd('/')
+        require(base.startsWith("https://")) { "Set your HTTPS API address in Settings first." }
+        val request = Request.Builder().url("$base/api/v2/hianime/$path").header("Accept", "application/json").build()
+        Http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("API returned HTTP ${response.code}")
+            JSONObject(response.body?.string() ?: error("Empty API response"))
+        }
+    }
+    private fun JSONObject.data() = optJSONObject("data") ?: JSONObject()
+    private fun JSONArray.animes(): List<Anime> = (0 until length()).mapNotNull { i -> optJSONObject(i)?.toAnime() }
+    private fun JSONObject.toAnime(): Anime? {
+        val id = optString("id")
+        val name = optString("name")
+        if (id.isBlank() || name.isBlank()) return null
+        val eps = optJSONObject("episodes") ?: JSONObject()
+        return Anime(id, name, optString("poster"), optString("description"), optString("type"), optString("rating"), eps.optInt("sub"), eps.optInt("dub"))
+    }
+    suspend fun home(): Pair<Anime?, List<Pair<String, List<Anime>>>> {
+        val d = get("home").data()
+        val spotlight = d.optJSONArray("spotlightAnimes")?.animes().orEmpty()
+        val sections = listOf(
+            "Trending" to (d.optJSONArray("trendingAnimes")?.animes().orEmpty()),
+            "Top Airing" to (d.optJSONArray("topAiringAnimes")?.animes().orEmpty()),
+            "Latest Episodes" to (d.optJSONArray("latestEpisodeAnimes")?.animes().orEmpty()),
+            "Most Popular" to (d.optJSONArray("mostPopularAnimes")?.animes().orEmpty()),
+            "Most Favorite" to (d.optJSONArray("mostFavoriteAnimes")?.animes().orEmpty()),
+            "Recently Completed" to (d.optJSONArray("latestCompletedAnimes")?.animes().orEmpty())
+        ).filter { it.second.isNotEmpty() }
+        return spotlight.firstOrNull() to sections
+    }
+    suspend fun search(q: String, page: Int = 1): List<Anime> = get("search?q=${URLEncoder.encode(q, "UTF-8")}&page=$page").data().optJSONArray("animes")?.animes().orEmpty()
+    suspend fun detail(id: String): Pair<Anime?, List<Anime>> {
+        val d = get("anime/${encPath(id)}").data()
+        val arr = d.optJSONArray("anime")
+        val first = arr?.optJSONObject(0)
+        val info = first?.optJSONObject("info")
+        val stats = info?.optJSONObject("stats") ?: JSONObject()
+        val eps = stats.optJSONObject("episodes") ?: JSONObject()
+        val main = if (info == null) null else Anime(info.optString("id", id), info.optString("name"), info.optString("poster"), info.optString("description"), stats.optString("type"), stats.optString("rating"), eps.optInt("sub"), eps.optInt("dub"))
+        val recommended = d.optJSONArray("recommendedAnimes")?.animes().orEmpty()
+        return main to recommended
+    }
+    suspend fun episodes(id: String): List<Episode> {
+        val a = get("anime/${encPath(id)}/episodes").data().optJSONArray("episodes") ?: JSONArray()
+        return (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { Episode(it.optString("episodeId"), it.optInt("number"), it.optString("title"), it.optBoolean("isFiller")) } }
+    }
+    suspend fun servers(episodeId: String, category: String): List<Server> {
+        val d = get("episode/servers?animeEpisodeId=${encQuery(episodeId)}").data()
+        val a = d.optJSONArray(category) ?: JSONArray()
+        return (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { Server(it.optString("serverName"), it.optInt("serverId")) } }
+    }
+    suspend fun source(episodeId: String, server: String, category: String): StreamInfo {
+        val d = get("episode/sources?animeEpisodeId=${encQuery(episodeId)}&server=${encQuery(server)}&category=$category").data()
+        val source = d.optJSONArray("sources")?.optJSONObject(0) ?: error("This server did not return a playable video source.")
+        val url = source.optString("url")
+        require(url.startsWith("https://")) { "The selected source did not return a secure playable URL." }
+        val headers = d.optJSONObject("headers") ?: JSONObject()
+        val subs = d.optJSONArray("subtitles")
+        val tracks = (0 until (subs?.length() ?: 0)).mapNotNull { i -> subs?.optJSONObject(i)?.let { it.optString("lang") to it.optString("url") } }.filter { it.second.startsWith("https://") }
+        return StreamInfo(url, headers.optString("Referer"), headers.optString("User-Agent"), tracks)
+    }
+    private fun encPath(s: String) = s.split("/").joinToString("/") { URLEncoder.encode(it, "UTF-8") }
+    private fun encQuery(s: String) = URLEncoder.encode(s, "UTF-8")
+}
+
 @Composable
 private fun AniWatchApp() {
-    var selectedTab by remember { mutableStateOf("Home") }
-    var selectedAnime by remember { mutableStateOf<Anime?>(null) }
-    var search by remember { mutableStateOf("") }
-    var showStreamDialog by remember { mutableStateOf(false) }
-    var streamUrl by remember { mutableStateOf("") }
-    var playerUrl by remember { mutableStateOf<String?>(null) }
-    val watchlist = remember { mutableStateListOf<Int>() }
+    val context = LocalContext.current
+    val api = remember { AniApi(context) }
+    val scope = rememberCoroutineScope()
+    var apiBase by remember { mutableStateOf(api.baseUrl) }
+    var tab by remember { mutableStateOf("Home") }
+    var hero by remember { mutableStateOf<Anime?>(null) }
+    var sections by remember { mutableStateOf<List<Pair<String, List<Anime>>>>(emptyList()) }
+    var searchText by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Anime>>(emptyList()) }
+    var selected by remember { mutableStateOf<Anime?>(null) }
+    var detailAnime by remember { mutableStateOf<Anime?>(null) }
+    var recommendations by remember { mutableStateOf<List<Anime>>(emptyList()) }
+    var episodes by remember { mutableStateOf<List<Episode>>(emptyList()) }
+    var playerInfo by remember { mutableStateOf<StreamInfo?>(null) }
+    var currentEpisode by remember { mutableStateOf<Episode?>(null) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    var savedItems by remember { mutableStateOf<Map<String, Anime>>(emptyMap()) }
+    var queryJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    BackHandler(enabled = playerUrl != null || selectedAnime != null || selectedTab != "Home") {
-        when {
-            playerUrl != null -> playerUrl = null
-            selectedAnime != null -> selectedAnime = null
-            else -> selectedTab = "Home"
-        }
+    fun loadHome() { scope.launch { loading = true; error = ""; runCatching { api.home() }.onSuccess { hero = it.first; sections = it.second }.onFailure { error = it.message ?: "Could not load catalog" }; loading = false } }
+    fun openAnime(anime: Anime) { selected = anime; detailAnime = null; episodes = emptyList(); error = ""; scope.launch { loading = true; runCatching { api.detail(anime.id) to api.episodes(anime.id) }.onSuccess { (d, e) -> detailAnime = d ?: anime; recommendations = d?.let { api.detail(it.id).second }.orEmpty(); episodes = e }.onFailure { error = it.message ?: "Could not load anime details" }; loading = false } }
+    fun doSearch(q: String) { queryJob?.cancel(); queryJob = scope.launch { delay(350); if (q.isNotBlank()) { loading = true; runCatching { api.search(q) }.onSuccess { results = it }.onFailure { error = it.message ?: "Search failed" }; loading = false } else results = emptyList() } }
+    fun playEpisode(ep: Episode) { currentEpisode = ep; error = ""; scope.launch { loading = true; runCatching { val servers = api.servers(ep.id, "sub"); val server = servers.firstOrNull() ?: error("No subtitle servers are available for this episode."); api.source(ep.id, server.name, "sub") }.onSuccess { playerInfo = it }.onFailure { error = it.message ?: "Playback source unavailable" }; loading = false } }
+
+    BackHandler(enabled = playerInfo != null || selected != null || tab != "Home") {
+        when { playerInfo != null -> playerInfo = null; selected != null -> selected = null; else -> tab = "Home" }
     }
-
-    MaterialTheme(colorScheme = darkColorScheme(
-        primary = Accent, background = Ink, surface = Panel,
-        onBackground = Color.White, onSurface = Color.White
-    )) {
-        Surface(Modifier.fillMaxSize(), color = Ink) {
+    MaterialTheme(colorScheme = darkColorScheme(primary = Red, background = Bg, surface = SurfaceDark, onBackground = Color.White, onSurface = Color.White)) {
+        Surface(Modifier.fillMaxSize(), color = Bg) {
             when {
-                playerUrl != null -> NativePlayer(url = playerUrl!!, onBack = { playerUrl = null })
-                selectedAnime != null -> DetailScreen(
-                    anime = selectedAnime!!,
-                    isSaved = watchlist.contains(selectedAnime!!.id),
-                    onBack = { selectedAnime = null },
-                    onToggleSave = {
-                        if (watchlist.contains(selectedAnime!!.id)) watchlist.remove(selectedAnime!!.id)
-                        else watchlist.add(selectedAnime!!.id)
-                    },
-                    onPlay = { showStreamDialog = true },
-                    onBrowseSite = { selectedTab = "AniWatch"; selectedAnime = null }
+                playerInfo != null -> NativePlayer(playerInfo!!, currentEpisode?.title ?: "Now Playing", onBack = { playerInfo = null })
+                selected != null -> DetailPage(
+                    anime = detailAnime ?: selected!!, episodes = episodes, loading = loading, error = error,
+                    isSaved = savedItems.containsKey(selected!!.id), onBack = { selected = null },
+                    onSave = { savedItems = if (savedItems.containsKey(selected!!.id)) savedItems - selected!!.id else savedItems + (selected!!.id to (detailAnime ?: selected!!)) },
+                    onPlay = { ep -> playEpisode(ep) }, onAnime = { openAnime(it) }
                 )
-                else -> HomeScreen(
-                    selectedTab = selectedTab,
-                    onTab = { selectedTab = it },
-                    search = search,
-                    onSearch = { search = it },
-                    watchlist = watchlist,
-                    onSelectAnime = { selectedAnime = it }
+                else -> MainPage(
+                    tab = tab, apiBase = apiBase, onApiBase = { apiBase = it }, onSaveApi = { api.baseUrl = apiBase; loadHome() },
+                    hero = hero, sections = sections, searchText = searchText, onSearchText = { searchText = it; doSearch(it) },
+                    results = results, savedItems = savedItems.values.toList(), loading = loading, error = error,
+                    onTab = { tab = it }, onAnime = { openAnime(it) }, onRefresh = { loadHome() }
                 )
             }
         }
-
-        if (showStreamDialog) {
-            AlertDialog(
-                onDismissRequest = { showStreamDialog = false },
-                title = { Text("Play with a stream URL") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Paste an HTTPS direct video URL from a source you are authorized to use. HLS (.m3u8), DASH (.mpd) and MP4 are supported.", color = Muted)
-                        OutlinedTextField(value = streamUrl, onValueChange = { streamUrl = it }, label = { Text("https://…") }, singleLine = true)
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (streamUrl.startsWith("https://")) {
-                            playerUrl = streamUrl.trim()
-                            showStreamDialog = false
-                        }
-                    }) { Text("Play") }
-                },
-                dismissButton = { TextButton(onClick = { showStreamDialog = false }) { Text("Cancel") } },
-                containerColor = Panel,
-                titleContentColor = Color.White,
-                textContentColor = Muted
-            )
-        }
     }
+    LaunchedEffect(apiBase) { if (apiBase.startsWith("https://")) loadHome() }
 }
 
 @Composable
-private fun HomeScreen(
-    selectedTab: String,
-    onTab: (String) -> Unit,
-    search: String,
-    onSearch: (String) -> Unit,
-    watchlist: List<Int>,
-    onSelectAnime: (Anime) -> Unit
-) {
-    val context = LocalContext.current
-    val filtered = when (selectedTab) {
-        "My List" -> catalog.filter { watchlist.contains(it.id) }
-        "Search" -> catalog.filter { it.title.contains(search, ignoreCase = true) }
-        else -> catalog
-    }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().background(Ink),
-        contentPadding = PaddingValues(bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
+private fun MainPage(tab: String, apiBase: String, onApiBase: (String) -> Unit, onSaveApi: () -> Unit, hero: Anime?, sections: List<Pair<String, List<Anime>>>, searchText: String, onSearchText: (String) -> Unit, results: List<Anime>, savedItems: List<Anime>, loading: Boolean, error: String, onTab: (String) -> Unit, onAnime: (Anime) -> Unit, onRefresh: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("ANI", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                    Text("WATCH", color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.weight(1f))
-                    Text("ANIME STREAMING", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
+                    Text("WATCH", color = Red, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.weight(1f)); Text("ANIME", color = Muted, fontSize = 10.sp, letterSpacing = 3.sp)
                 }
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Home", "Search", "My List", "AniWatch").forEach { tab ->
-                        val active = selectedTab == tab
-                        Box(
-                            Modifier.clip(RoundedCornerShape(30.dp))
-                                .background(if (active) Accent else Panel)
-                                .clickable { onTab(tab) }
-                                .focusable()
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                        ) { Text(tab, color = Color.White, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, fontSize = 13.sp) }
-                    }
-                }
-                if (selectedTab == "Search") {
-                    Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(value = search, onValueChange = onSearch, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search anime") })
-                }
-            }
-        }
-        if (selectedTab == "AniWatch") {
-            item {
-                Column(Modifier.padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("AniWatch catalog", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text("The original site is available as the catalog reference, but its changing third-party embeds are not converted into direct video streams by this app. Open the site to browse its current catalog and use a supported, authorized direct stream in the native player.", color = Muted, fontSize = 13.sp)
-                    Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aniwatch.co.at/"))) }) { Text("Open AniWatch website") }
-                }
-            }
-        } else if (selectedTab == "Home") {
-            item {
-                HeroBanner(anime = catalog.first(), onClick = { onSelectAnime(catalog.first()) })
-            }
-            item { SectionTitle("Trending now", "Popular picks") }
-            item { AnimeRail(catalog.take(5), onSelectAnime) }
-            item { SectionTitle("Discover", "More to explore") }
-            item { AnimeRail(catalog.drop(3), onSelectAnime) }
-        } else {
-            item { SectionTitle(if (selectedTab == "My List") "My List" else "Search results", "${filtered.size} titles") }
-        }
-        if (selectedTab != "Home" && selectedTab != "AniWatch") {
-            if (filtered.isEmpty()) {
-                item { Text(if (selectedTab == "My List") "Your list is empty. Save a title to see it here." else "No matching titles.", color = Muted, modifier = Modifier.padding(horizontal = 22.dp)) }
-            } else {
-                items(filtered.chunked(2)) { pair ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { anime -> Box(Modifier.weight(1f)) { AnimeTile(anime, onClick = { onSelectAnime(anime) }) } }
-                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    listOf("Home", "Search", "My List", "Settings").forEach { name ->
+                        val icon = when (name) { "Home" -> Icons.Default.Home; "Search" -> Icons.Default.Search; "My List" -> Icons.Default.Bookmark; else -> Icons.Default.Settings }
+                        NavigationChip(name, tab == name, icon) { onTab(name) }
                     }
                 }
             }
         }
-        item {
-            Text("AniWatch homepage snapshot • Refreshable catalog integration is not yet connected", color = Color(0xFF687184), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 22.dp))
-        }
-    }
-}
-
-@Composable
-private fun HeroBanner(anime: Anime, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp).heightIn(min = 210.dp, max = 300.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(Brush.linearGradient(anime.colors + listOf(Ink)))
-            .clickable(onClick = onClick).focusable()
-            .padding(22.dp), contentAlignment = Alignment.BottomStart
-    ) {
-        Column(Modifier.fillMaxWidth(0.85f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("FEATURED ANIME", color = Color.White.copy(alpha = .75f), fontSize = 10.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
-            Text(anime.title, color = Color.White, fontSize = 32.sp, lineHeight = 35.sp, fontWeight = FontWeight.Black)
-            Text(anime.subtitle, color = Color.White.copy(alpha = .85f), fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("▶  Explore title", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = .18f)).padding(horizontal = 13.dp, vertical = 9.dp))
-                Text(anime.genre, color = Color.White.copy(alpha = .8f), fontSize = 11.sp)
+        when (tab) {
+            "Settings" -> {
+                item { Column(Modifier.padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Catalog connection", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Enter the HTTPS address of your own deployed AniWatch-compatible API. Do not add /api/v2/hianime; the app adds that path automatically.", color = Muted, fontSize = 13.sp)
+                    OutlinedTextField(value = apiBase, onValueChange = onApiBase, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("https://your-api-host") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+                    Button(onClick = onSaveApi, modifier = Modifier.fillMaxWidth()) { Text("Save and connect") }
+                    Text("The API server is separate from the Android app. The project README explains how to deploy it.", color = Muted, fontSize = 12.sp)
+                } }
+            }
+            "Search" -> {
+                item { Column(Modifier.padding(horizontal = 22.dp)) { Text("Find anime", fontSize = 24.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(10.dp)); OutlinedTextField(value = searchText, onValueChange = onSearchText, modifier = Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Search titles") }) } }
+                if (results.isNotEmpty()) item { AnimeGrid(results, onAnime) }
+            }
+            "My List" -> {
+                val list = savedItems
+                item { Text("My List", Modifier.padding(horizontal = 22.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+                if (list.isNotEmpty()) item { AnimeGrid(list, onAnime) } else item { Text("Save anime from its detail page to see it here.", Modifier.padding(horizontal = 22.dp), color = Muted) }
+            }
+            else -> {
+                if (hero != null) item { HeroCard(hero, onAnime) }
+                sections.forEach { (title, list) -> item { AnimeRail(title, list, onAnime) } }
+                if (hero == null && sections.isEmpty()) item { Text("Connect an API in Settings to load live anime artwork, search and episodes.", Modifier.padding(horizontal = 22.dp), color = Muted) }
             }
         }
+        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 22.dp), color = Red) }
+        if (error.isNotBlank()) item { Text(error, Modifier.padding(horizontal = 22.dp), color = Color(0xFFFF8A80), fontSize = 13.sp) }
+        if (tab == "Home" && sections.isNotEmpty()) item { Text("Catalog provided by your configured API", Modifier.padding(horizontal = 22.dp), color = Muted, fontSize = 10.sp) }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String, subtitle: String) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.Bottom) {
-        Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        Spacer(Modifier.width(9.dp))
-        Text(subtitle, fontSize = 11.sp, color = Muted, modifier = Modifier.padding(bottom = 3.dp))
-    }
-}
-
-@Composable
-private fun AnimeRail(items: List<Anime>, onSelect: (Anime) -> Unit) {
-    LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(items) { anime -> AnimeTile(anime, onClick = { onSelect(anime) }, modifier = Modifier.width(148.dp)) }
-    }
-}
-
-@Composable
-private fun AnimeTile(anime: Anime, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun NavigationChip(label: String, active: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Column(modifier = modifier.onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().height(174.dp).clip(RoundedCornerShape(13.dp))
-            .background(Brush.linearGradient(anime.colors))
-            .then(if (focused) Modifier.border(2.dp, Color.White, RoundedCornerShape(13.dp)) else Modifier),
-            contentAlignment = Alignment.BottomStart) {
-            Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                Text(anime.title, color = Color.White, fontSize = 17.sp, lineHeight = 19.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(4.dp))
-                Text("ANIME", color = Color.White.copy(alpha = .75f), fontSize = 9.sp, letterSpacing = 1.5.sp)
-            }
-        }
-        Spacer(Modifier.height(7.dp))
-        Text(anime.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(anime.genre, color = Muted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.clip(RoundedCornerShape(24.dp)).background(if (active) Red else SurfaceDark).onFocusChanged { focused = it.isFocused }.clickable { onClick() }.focusable().padding(horizontal = 13.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp)); Text(label, color = Color.White, fontSize = 12.sp, fontWeight = if (active || focused) FontWeight.Bold else FontWeight.Medium)
     }
 }
 
 @Composable
-private fun DetailScreen(
-    anime: Anime,
-    isSaved: Boolean,
-    onBack: () -> Unit,
-    onToggleSave: () -> Unit,
-    onPlay: () -> Unit,
-    onBrowseSite: () -> Unit
-) {
+private fun HeroCard(anime: Anime, onClick: (Anime) -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(310.dp).clip(RoundedCornerShape(20.dp)).clickable { onClick(anime) }) {
+        if (anime.poster.isNotBlank()) AsyncImage(anime.poster, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xEE080A10)))))
+        Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) {
+            Text("FEATURED ANIME", color = Red, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Text(anime.name, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (anime.description.isNotBlank()) Text(anime.description, color = Color.White.copy(alpha = .82f), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp)); Button(onClick = { onClick(anime) }, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Icon(Icons.Default.PlayArrow, null); Text("Explore") }
+        }
+    }
+}
+
+@Composable
+private fun AnimeRail(title: String, list: List<Anime>, onAnime: (Anime) -> Unit) {
+    if (list.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, Modifier.padding(horizontal = 22.dp), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        LazyRow(contentPadding = PaddingValues(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(list, key = { it.id }) { AnimePoster(it, onAnime) } }
+    }
+}
+
+@Composable
+private fun AnimePoster(anime: Anime, onAnime: (Anime) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Column(Modifier.width(132.dp).onFocusChanged { focused = it.isFocused }.clip(RoundedCornerShape(10.dp)).background(if (focused) SurfaceDark else Color.Transparent).clickable { onAnime(anime) }.focusable()) {
+        Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(10.dp)).background(SurfaceDark)) {
+            if (anime.poster.isNotBlank()) AsyncImage(anime.poster, anime.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (focused) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = .08f)))
+        }
+        Text(anime.name, Modifier.padding(top = 6.dp, start = 3.dp, end = 3.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(listOf(anime.type, anime.rating).filter { it.isNotBlank() }.joinToString(" • "), Modifier.padding(start = 3.dp, end = 3.dp, bottom = 5.dp), color = Muted, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun AnimeGrid(list: List<Anime>, onAnime: (Anime) -> Unit) {
+    Column(Modifier.padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        list.chunked(3).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { row.forEach { Box(Modifier.weight(1f)) { AnimePoster(it, onAnime) } }; repeat(3 - row.size) { Spacer(Modifier.weight(1f)) } } }
+    }
+}
+
+@Composable
+private fun DetailPage(anime: Anime, episodes: List<Episode>, loading: Boolean, error: String, isSaved: Boolean, onBack: () -> Unit, onSave: () -> Unit, onPlay: (Episode) -> Unit, onAnime: (Anime) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
         item {
-            Box(Modifier.fillMaxWidth().height(300.dp).background(Brush.linearGradient(anime.colors)), contentAlignment = Alignment.BottomStart) {
-                Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("ANIWATCH  /  TITLE", color = Color.White.copy(alpha = .7f), fontSize = 10.sp, letterSpacing = 2.sp)
-                    Text(anime.title, color = Color.White, fontSize = 36.sp, lineHeight = 38.sp, fontWeight = FontWeight.Black)
-                    Text(anime.genre, color = Color.White.copy(alpha = .85f), fontSize = 13.sp)
+            Box(Modifier.fillMaxWidth().height(320.dp).background(SurfaceDark)) {
+                if (anime.poster.isNotBlank()) AsyncImage(anime.poster, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x22000000), Bg))))
+                IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .5f), RoundedCornerShape(50))) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
+                Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) {
+                    Text(anime.name, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(listOf(anime.type, anime.rating, if (anime.sub > 0) "${anime.sub} SUB" else "").filter { it.isNotBlank() }.joinToString(" • "), color = Muted, fontSize = 12.sp)
+                    Spacer(Modifier.height(12.dp)); Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { episodes.firstOrNull()?.let(onPlay) }, colors = ButtonDefaults.buttonColors(containerColor = Red), enabled = episodes.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null); Text("Play") }
+                        OutlinedButton(onClick = onSave) { Icon(Icons.Default.Bookmark, null); Text(if (isSaved) "Saved" else "My List") }
+                    }
                 }
             }
         }
-        item {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(anime.description, color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = onPlay) { Text("▶  Play") }
-                    OutlinedButton(onClick = onToggleSave) { Text(if (isSaved) "✓  In My List" else "+  My List") }
-                }
-                OutlinedButton(onClick = onBrowseSite) { Text("Browse AniWatch catalog") }
-                Text("Playback note", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("The app uses Android's native Media3 player. It accepts direct HLS, DASH or MP4 stream URLs. Website iframe pages and protected third-party embeds are not direct stream URLs and cannot be imported automatically.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-                Text("Episodes", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Episode listings will populate when a permitted catalog API or feed is connected.", color = Muted, fontSize = 12.sp)
+        if (anime.description.isNotBlank()) item { Text(anime.description, Modifier.padding(horizontal = 22.dp, vertical = 16.dp), color = Muted, fontSize = 14.sp, lineHeight = 20.sp) }
+        item { Text("Episodes", Modifier.padding(horizontal = 22.dp, vertical = 8.dp), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold) }
+        if (episodes.isEmpty() && loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 22.dp), color = Red) }
+        items(episodes, key = { it.id }) { ep ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 5.dp).clip(RoundedCornerShape(10.dp)).background(SurfaceDark).clickable { onPlay(ep) }.focusable().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(88.dp, 56.dp).clip(RoundedCornerShape(7.dp)).background(Color(0xFF292F3D)), contentAlignment = Alignment.Center) { Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(28.dp)) }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) { Text("Episode ${ep.number}", color = Color.White, fontWeight = FontWeight.Bold); Text(ep.title.ifBlank { "Episode ${ep.number}" }, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis); if (ep.filler) Text("Filler", color = Red, fontSize = 10.sp) }
+                Icon(Icons.Default.PlayArrow, null, tint = Red)
             }
         }
-    }
-    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.TopStart) {
-        TextButton(onClick = onBack) { Text("‹  Back", color = Color.White) }
+        if (error.isNotBlank()) item { Text(error, Modifier.padding(22.dp), color = Color(0xFFFF8A80)) }
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
-private fun NativePlayer(url: String, onBack: () -> Unit) {
+private fun NativePlayer(info: StreamInfo, title: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    val player = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            prepare()
-            playWhenReady = true
-        }
+    val player = remember(info.url) {
+        val props = mutableMapOf<String, String>()
+        if (info.referer.isNotBlank()) props["Referer"] = info.referer
+        if (info.userAgent.isNotBlank()) props["User-Agent"] = info.userAgent
+        val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(props)
+        val mediaItem = MediaItem.Builder().setUri(info.url).setMimeType(MimeTypes.APPLICATION_M3U8).apply {
+            val subtitle = info.subtitles.firstOrNull()
+            if (subtitle != null) setSubtitleConfigurations(listOf(MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(subtitle.second)).setMimeType(MimeTypes.TEXT_VTT).setLanguage(subtitle.first).setLabel(subtitle.first).build()))
+        }.build()
+        ExoPlayer.Builder(context).build().apply { setMediaSource(HlsMediaSource.Factory(httpFactory).createMediaSource(mediaItem)); prepare(); playWhenReady = true }
     }
     DisposableEffect(player) { onDispose { player.release() } }
     Column(Modifier.fillMaxSize().background(Color.Black)) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹  Back", color = Color.White) }
-            Text("ANIWATCH PLAYER", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
-        }
-        AndroidView(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            factory = { ctx -> PlayerView(ctx).apply {
-                this.player = player
-                useController = true
-                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            } },
-            update = { it.player = player }
-        )
+        Row(Modifier.fillMaxWidth().background(Color(0xFF111111)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = Color.White) }; Text(title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        AndroidView(factory = { ctx -> PlayerView(ctx).apply { this.player = player; useController = true; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT) } }, modifier = Modifier.fillMaxWidth().weight(1f))
     }
 }
-
